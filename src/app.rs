@@ -54,7 +54,9 @@ impl App {
         while self.running {
             terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
             match self.events.next().await? {
-                Event::Tick => self.tick(),
+                Event::Tick => {
+                    self.tick().await?;
+                }
                 Event::Crossterm(event) => match event {
                     crossterm::event::Event::Key(key_event) => self.handle_key_events(key_event)?,
                     _ => {}
@@ -64,6 +66,7 @@ impl App {
                     AppEvent::PrevMitch => self.prev(),
                     AppEvent::NextMitch => self.next(),
                     AppEvent::Connect => {
+                        println!("Connecting");
                         self.mitches.get_active_mut().connect().await?;
                     }
                     AppEvent::Disconnect => {

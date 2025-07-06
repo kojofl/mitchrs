@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::{cmp::max, fmt::Write};
 
 use btleplug::{
     api::{Peripheral as _, WriteType},
@@ -11,17 +11,35 @@ use ratatui::{
     style::{Color, Style},
     widgets::{Block, Borders, Paragraph, Widget, WidgetRef},
 };
+use std::fmt;
 use uuid::{Uuid, uuid};
 
 pub const COMMAND_CHAR: Uuid = uuid!("d5913036-2d8a-41ee-85b9-4e361aa5c8a7");
 pub const DATA_CHAR: Uuid = uuid!("09bf2c52-d1d9-c0b7-4145-475964544307");
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Mitch {
     name: String,
     per: Peripheral,
     connected: bool,
     state: Option<MitchState>,
+}
+
+impl fmt::Debug for Mitch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        #[derive(Debug)]
+        struct DebugMitch<'a> {
+            name: &'a String,
+            connected: bool,
+            state: Option<MitchState>,
+        }
+        let dbg = DebugMitch {
+            name: &self.name,
+            connected: self.connected,
+            state: self.state,
+        };
+        fmt::Debug::fmt(&dbg, f)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
