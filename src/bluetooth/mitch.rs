@@ -1,22 +1,71 @@
 use std::cmp::max;
 
-use btleplug::{api::Peripheral as _, platform::Peripheral};
+use btleplug::{
+    api::{Peripheral as _, WriteType},
+    platform::Peripheral,
+};
+use color_eyre::eyre::eyre;
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
-    style::{Color, Style, Stylize as _},
-    text::{Span, Text},
-    widgets::{
-        Block, BorderType, Borders, List, ListItem, ListState, Paragraph, StatefulWidget as _,
-        Widget, WidgetRef,
-    },
+    layout::{Constraint, Direction, Flex, Layout, Rect},
+    style::{Color, Style},
+    widgets::{Block, Borders, Paragraph, Widget, WidgetRef},
 };
+use uuid::{Uuid, uuid};
+
+pub const COMMAND_CHAR: Uuid = uuid!("d5913036-2d8a-41ee-85b9-4e361aa5c8a7");
+pub const DATA_CHAR: Uuid = uuid!("09bf2c52-d1d9-c0b7-4145-475964544307");
 
 #[derive(Clone, Debug)]
 pub struct Mitch {
     name: String,
     per: Peripheral,
     connected: bool,
+    state: Option<MitchState>,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum MitchState {
+    SysStartup = 0x01,
+    SysIdle = 0x02,
+    SysStandby = 0x03,
+    SysLog = 0x04,
+    SysReadout = 0x05,
+    SysTx = 0xF8,
+    SysError = 0xFF,
+    BootStartup = 0xf0,
+    BootIdle = 0xf1,
+    BootDownload = 0xf2,
+}
+
+impl TryFrom<u8> for MitchState {
+    type Error = color_eyre::eyre::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if (1_u8..=5_u8).contains(&value)
+            || value == 0xf8
+            || value == 0xff
+            || value == 0xf0
+            || value == 0xf1
+            || value == 0xf2
+        {
+            return Ok(unsafe { *(&value as *const _ as *const MitchState) });
+        }
+        Err(eyre!("Unknown state: {value}"))
+    }
+}
+
+enum Commands {
+    GetState,
+}
+
+impl AsRef<[u8]> for Commands {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            Commands::GetState => &[130, 0],
+        }
+    }
 }
 
 impl Mitch {
@@ -25,15 +74,45 @@ impl Mitch {
             name,
             per,
             connected: false,
+            state: None,
         }
     }
 
-    pub async fn connect(&mut self) -> color_eyre::Result<()> {
+    pub(crate) async fn update_state(&mut self) -> color_eyre::Result<()> {
+        if !self.connected {
+            self.state = None;
+            return Ok(());
+        }
+        let c = self.per.characteristics();
+        let cmd_char = c.iter().find(|c| c.uuid == COMMAND_CHAR).unwrap();
+        self.per
+            .write(
+                cmd_char,
+                Commands::GetState.as_ref(),
+                WriteType::WithResponse,
+            )
+            .await?;
+        let state = MitchState::try_from(self.per.read(cmd_char).await?[4])?;
+        self.state = Some(state);
+        Ok(())
+    }
+
+    pub(crate) async fn connect(&mut self) -> color_eyre::Result<()> {
         if self.connected {
             return Ok(());
         }
         self.per.connect().await?;
+        self.per.discover_services().await?;
         self.connected = true;
+        Ok(())
+    }
+
+    pub(crate) async fn disconnect(&mut self) -> color_eyre::Result<()> {
+        if !self.connected {
+            return Ok(());
+        }
+        self.per.disconnect().await?;
+        self.connected = false;
         Ok(())
     }
 }
@@ -84,6 +163,13 @@ impl MitchList {
 
     pub fn get_active_mut(&mut self) -> &mut Mitch {
         &mut self.inner[self.active]
+    }
+
+    pub async fn update(&mut self) -> color_eyre::Result<()> {
+        for m in self.inner.iter_mut() {
+            m.update_state().await?;
+        }
+        Ok(())
     }
 
     pub fn len(&self) -> usize {

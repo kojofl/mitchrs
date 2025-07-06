@@ -697,6 +697,7 @@ dependencies = [
  "futures",
  "ratatui",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

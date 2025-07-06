@@ -66,6 +66,9 @@ impl App {
                     AppEvent::Connect => {
                         self.mitches.get_active_mut().connect().await?;
                     }
+                    AppEvent::Disconnect => {
+                        self.mitches.get_active_mut().disconnect().await?;
+                    }
                 },
                 Event::Bluetooth(bluetooth_event) => match bluetooth_event {
                     BluetoothEvent::Discovered(mitch) => {
@@ -111,6 +114,7 @@ impl App {
                         self.events.send(AppEvent::Quit)
                     }
                     KeyCode::Char('c') => self.events.send(AppEvent::Connect),
+                    KeyCode::Char('d') => self.events.send(AppEvent::Disconnect),
                     _ => {}
                 }
             }
@@ -122,7 +126,10 @@ impl App {
     ///
     /// The tick event is where you can update the state of your application with any logic that
     /// needs to be updated at a fixed frame rate. E.g. polling a server, updating an animation.
-    pub fn tick(&self) {}
+    pub async fn tick(&mut self) -> color_eyre::Result<()> {
+        self.mitches.update().await?;
+        Ok(())
+    }
 
     /// Set running to false to quit the application.
     pub fn quit(&mut self) {

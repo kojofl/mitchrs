@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use crate::bluetooth::{BluetoothEvent, BtleDiscoverTask};
 
 /// The frequency at which tick events are emitted.
-const TICK_FPS: f64 = 30.0;
+const TICK_FPS: f64 = 1.0;
 
 /// Representation of all possible events.
 #[derive(Clone, Debug)]
@@ -38,6 +38,7 @@ pub enum AppEvent {
     PrevMitch,
     NextMitch,
     Quit,
+    Disconnect,
 }
 
 /// Terminal event handler.
