@@ -1,10 +1,11 @@
-use std::{cmp::max, fmt::Write};
+use std::cmp::max;
 
 use btleplug::{
     api::{Peripheral as _, WriteType},
     platform::Peripheral,
 };
 use color_eyre::eyre::eyre;
+use futures::StreamExt;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Flex, Layout, Rect},
@@ -28,6 +29,7 @@ pub struct Mitch {
 impl fmt::Debug for Mitch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         #[derive(Debug)]
+        #[allow(dead_code)]
         struct DebugMitch<'a> {
             name: &'a String,
             connected: bool,
@@ -94,6 +96,19 @@ impl Mitch {
             connected: false,
             state: None,
         }
+    }
+
+    pub(crate) async fn start_recording(&mut self) -> color_eyre::Result<()> {
+        let c = self.per.characteristics();
+        let cmd_char = c.iter().find(|c| c.uuid == COMMAND_CHAR).unwrap();
+        self.per.subscribe(&cmd_char).await?;
+        let mut s = self.per.notifications().await?;
+        tokio::spawn(async move {
+            while let Some(b) = s.next().await {
+                println!("{b:?}");
+            }
+        });
+        Ok(())
     }
 
     pub(crate) async fn update_state(&mut self) -> color_eyre::Result<()> {
@@ -183,9 +198,15 @@ impl MitchList {
         &mut self.inner[self.active]
     }
 
+    // Update state for all mitches if the update fails we disconnect the mitch
+    // TODO: maybe we should mark it
     pub async fn update(&mut self) -> color_eyre::Result<()> {
-        for m in self.inner.iter_mut() {
-            m.update_state().await?;
+        for i in (0..self.inner.len()).rev() {
+            if !self.inner[i].update_state().await.is_ok() {
+                // we ignore the error here since it is very likely that the connection has gone
+                // away and therefore the function would error and that is fine
+                let _ = self.inner[i].disconnect().await;
+            }
         }
         Ok(())
     }

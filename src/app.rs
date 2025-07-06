@@ -66,7 +66,6 @@ impl App {
                     AppEvent::PrevMitch => self.prev(),
                     AppEvent::NextMitch => self.next(),
                     AppEvent::Connect => {
-                        println!("Connecting");
                         self.mitches.get_active_mut().connect().await?;
                     }
                     AppEvent::Disconnect => {
