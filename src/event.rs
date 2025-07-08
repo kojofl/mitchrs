@@ -39,6 +39,8 @@ pub enum AppEvent {
     NextMitch,
     Quit,
     Disconnect,
+    StopRecord,
+    StartRecord,
 }
 
 /// Terminal event handler.
@@ -48,6 +50,12 @@ pub struct EventHandler {
     sender: mpsc::UnboundedSender<Event>,
     /// Event receiver channel.
     receiver: mpsc::UnboundedReceiver<Event>,
+}
+
+impl Default for EventHandler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EventHandler {

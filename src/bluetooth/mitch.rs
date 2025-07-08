@@ -5,7 +5,7 @@ use btleplug::{
     platform::Peripheral,
 };
 use color_eyre::eyre::eyre;
-use futures::StreamExt;
+use futures::{StreamExt, executor::block_on};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Flex, Layout, Rect},
@@ -24,6 +24,14 @@ pub struct Mitch {
     per: Peripheral,
     connected: bool,
     state: Option<MitchState>,
+}
+
+impl Drop for Mitch {
+    fn drop(&mut self) {
+        if self.connected {
+            let _ = block_on(self.per.disconnect());
+        }
+    }
 }
 
 impl fmt::Debug for Mitch {
@@ -78,36 +86,73 @@ impl TryFrom<u8> for MitchState {
 
 enum Commands {
     GetState,
+    StartStream,
+    StopStream,
 }
 
 impl AsRef<[u8]> for Commands {
     fn as_ref(&self) -> &[u8] {
         match self {
             Commands::GetState => &[130, 0],
+            Commands::StartStream => &[0x02, 0x03, 0xF8, 0x04, 0x04],
+            Commands::StopStream => &[0x02, 0x01, 0x02],
         }
     }
 }
 
 impl Mitch {
-    pub fn new(name: String, per: Peripheral) -> Self {
-        Self {
+    pub async fn new(name: String, per: Peripheral) -> color_eyre::Result<Self> {
+        let mut s = per.notifications().await?;
+        tokio::spawn(async move {
+            while let Some(b) = s.next().await {
+                if b.uuid != DATA_CHAR {
+                    continue;
+                }
+                println!("{b:?}")
+            }
+        });
+        Ok(Self {
             name,
             per,
             connected: false,
             state: None,
-        }
+        })
+    }
+
+    pub fn name_with_state(&self) -> String {
+        format!("{} - {:?}", self.name, self.state)
     }
 
     pub(crate) async fn start_recording(&mut self) -> color_eyre::Result<()> {
         let c = self.per.characteristics();
+        let data_char = c.iter().find(|c| c.uuid == DATA_CHAR).unwrap();
+        self.per.subscribe(data_char).await?;
         let cmd_char = c.iter().find(|c| c.uuid == COMMAND_CHAR).unwrap();
-        self.per.subscribe(&cmd_char).await?;
-        let mut s = self.per.notifications().await?;
-        tokio::spawn(async move {
-            while let Some(b) = s.next().await {
-                println!("{b:?}");
-            }
-        });
+        self.per
+            .write(
+                cmd_char,
+                Commands::StartStream.as_ref(),
+                WriteType::WithResponse,
+            )
+            .await?;
+        self.per.read(cmd_char).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn stop_recording(&mut self) -> color_eyre::Result<()> {
+        let characteristics = self.per.characteristics();
+        let cmd_char = characteristics
+            .iter()
+            .find(|c| c.uuid == COMMAND_CHAR)
+            .unwrap();
+        self.per
+            .write(
+                cmd_char,
+                Commands::StopStream.as_ref(),
+                WriteType::WithResponse,
+            )
+            .await?;
+        self.per.read(cmd_char).await?;
         Ok(())
     }
 
@@ -178,6 +223,12 @@ pub struct MitchList {
     pub active: usize,
 }
 
+impl Default for MitchList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MitchList {
     pub fn new() -> Self {
         Self {
@@ -202,7 +253,7 @@ impl MitchList {
     // TODO: maybe we should mark it
     pub async fn update(&mut self) -> color_eyre::Result<()> {
         for i in (0..self.inner.len()).rev() {
-            if !self.inner[i].update_state().await.is_ok() {
+            if self.inner[i].update_state().await.is_err() {
                 // we ignore the error here since it is very likely that the connection has gone
                 // away and therefore the function would error and that is fine
                 let _ = self.inner[i].disconnect().await;
@@ -212,13 +263,18 @@ impl MitchList {
     }
 
     pub fn len(&self) -> usize {
-        return self.inner.len();
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
 impl WidgetRef for MitchList {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
-        let len = self.inner.iter().map(|m| m.name.len()).max().unwrap_or(0);
+        let info: Vec<String> = self.inner.iter().map(|m| m.name_with_state()).collect();
+        let len = info.iter().map(|m| m.len()).max().unwrap_or(0);
         // Define a layout for the list items. Each item gets 3 rows.
         let item_height = 3;
         let constraints: Vec<Constraint> = self
@@ -228,7 +284,7 @@ impl WidgetRef for MitchList {
             .collect();
         let a = center(
             area,
-            Constraint::Length((len + 10) as u16),
+            Constraint::Length((len + 5) as u16),
             Constraint::Length((item_height * self.len()) as u16),
         );
 
@@ -238,7 +294,7 @@ impl WidgetRef for MitchList {
             .split(a);
 
         // Iterate over items and their corresponding chunks
-        for (i, mitch) in self.inner.iter().enumerate() {
+        for (i, _) in self.inner.iter().enumerate() {
             // Determine the style of the block's border
             let border_style = if i == self.active {
                 Style::default().fg(Color::Cyan) // Highlighted border
@@ -248,7 +304,7 @@ impl WidgetRef for MitchList {
 
             let block = Block::default().borders(Borders::ALL).style(border_style);
 
-            let paragraph = Paragraph::new(mitch.name.as_str())
+            let paragraph = Paragraph::new(info[i].as_str())
                 .style(Style::default().fg(Color::White))
                 .centered()
                 .block(block); // Center the text inside the block

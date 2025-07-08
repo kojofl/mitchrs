@@ -1,7 +1,5 @@
 pub mod mitch;
 
-use std::time::Duration;
-
 use btleplug::{
     api::{Central as _, CentralEvent, CentralState, Manager as _, Peripheral as _, ScanFilter},
     platform::{Adapter, Manager},
@@ -15,7 +13,6 @@ use crate::event::Event;
 #[derive(Clone, Debug)]
 pub enum BluetoothEvent {
     Discovered(Mitch),
-    Lost(String),
     NotActive,
 }
 
@@ -25,7 +22,7 @@ pub struct BtleDiscoverTask {
 
 async fn get_central(manager: &Manager) -> Adapter {
     let adapters = manager.adapters().await.unwrap();
-    adapters.into_iter().nth(0).unwrap()
+    adapters.into_iter().next().unwrap()
 }
 
 impl BtleDiscoverTask {
@@ -57,31 +54,18 @@ impl BtleDiscoverTask {
         central.start_scan(ScanFilter::default()).await?;
 
         while let Some(event) = events.next().await {
-            match event {
-                CentralEvent::DeviceDiscovered(id) => {
-                    let peripheral = central.peripheral(&id).await?;
-                    let properties = peripheral.properties().await?;
-                    let name = properties
-                        .and_then(|p| p.local_name)
-                        .unwrap_or_default()
-                        .to_lowercase();
-                    if name.starts_with("mitch") {
-                        self.send(Event::Bluetooth(BluetoothEvent::Discovered(Mitch::new(
-                            name.clone(),
-                            peripheral.clone(),
-                        ))));
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                        self.send(Event::Bluetooth(BluetoothEvent::Discovered(Mitch::new(
-                            name.clone(),
-                            peripheral.clone(),
-                        ))));
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                        self.send(Event::Bluetooth(BluetoothEvent::Discovered(Mitch::new(
-                            name, peripheral,
-                        ))));
-                    }
+            if let CentralEvent::DeviceDiscovered(id) = event {
+                let peripheral = central.peripheral(&id).await?;
+                let properties = peripheral.properties().await?;
+                let name = properties
+                    .and_then(|p| p.local_name)
+                    .unwrap_or_default()
+                    .to_lowercase();
+                if name.starts_with("mitch") {
+                    self.send(Event::Bluetooth(BluetoothEvent::Discovered(
+                        Mitch::new(name.clone(), peripheral.clone()).await?,
+                    )));
                 }
-                _ => {}
             }
         }
         Ok(())

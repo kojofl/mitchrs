@@ -1,7 +1,4 @@
-use std::{
-    cmp::{max, min},
-    time::Duration,
-};
+use std::cmp::min;
 
 use crate::{
     bluetooth::{BluetoothEvent, mitch::MitchList},
@@ -57,10 +54,11 @@ impl App {
                 Event::Tick => {
                     self.tick().await?;
                 }
-                Event::Crossterm(event) => match event {
-                    crossterm::event::Event::Key(key_event) => self.handle_key_events(key_event)?,
-                    _ => {}
-                },
+                Event::Crossterm(event) => {
+                    if let crossterm::event::Event::Key(key_event) = event {
+                        self.handle_key_events(key_event)?
+                    }
+                }
                 Event::App(app_event) => match app_event {
                     AppEvent::Quit => self.quit(),
                     AppEvent::PrevMitch => self.prev(),
@@ -71,12 +69,17 @@ impl App {
                     AppEvent::Disconnect => {
                         self.mitches.get_active_mut().disconnect().await?;
                     }
+                    AppEvent::StopRecord => {
+                        self.mitches.get_active_mut().stop_recording().await?;
+                    }
+                    AppEvent::StartRecord => {
+                        self.mitches.get_active_mut().start_recording().await?;
+                    }
                 },
                 Event::Bluetooth(bluetooth_event) => match bluetooth_event {
                     BluetoothEvent::Discovered(mitch) => {
                         self.mitches.insert(mitch);
                     }
-                    BluetoothEvent::Lost(d_id) => {}
                     BluetoothEvent::NotActive => {
                         return Err(eyre!("Bluetooth not activated"));
                     }
@@ -117,6 +120,8 @@ impl App {
                     }
                     KeyCode::Char('c') => self.events.send(AppEvent::Connect),
                     KeyCode::Char('d') => self.events.send(AppEvent::Disconnect),
+                    KeyCode::Char('r') => self.events.send(AppEvent::StartRecord),
+                    KeyCode::Char('s') => self.events.send(AppEvent::StopRecord),
                     _ => {}
                 }
             }
