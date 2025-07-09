@@ -6,6 +6,7 @@ use btleplug::{
 };
 use color_eyre::eyre::eyre;
 use futures::{StreamExt, executor::block_on};
+use lsl::{Pushable, StreamInfo, StreamOutlet};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Flex, Layout, Rect},
@@ -13,6 +14,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget, WidgetRef},
 };
 use std::fmt;
+use tokio::{
+    select,
+    sync::{Mutex, watch},
+};
 use uuid::{Uuid, uuid};
 
 pub const COMMAND_CHAR: Uuid = uuid!("d5913036-2d8a-41ee-85b9-4e361aa5c8a7");
@@ -52,7 +57,7 @@ impl fmt::Debug for Mitch {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum MitchState {
     SysStartup = 0x01,
@@ -100,17 +105,14 @@ impl AsRef<[u8]> for Commands {
     }
 }
 
+struct MyInfo(StreamInfo);
+unsafe impl Send for MyInfo {}
+
+struct MyOutlet(StreamOutlet);
+unsafe impl Send for MyOutlet {}
+
 impl Mitch {
     pub async fn new(name: String, per: Peripheral) -> color_eyre::Result<Self> {
-        let mut s = per.notifications().await?;
-        tokio::spawn(async move {
-            while let Some(b) = s.next().await {
-                if b.uuid != DATA_CHAR {
-                    continue;
-                }
-                println!("{b:?}")
-            }
-        });
         Ok(Self {
             name,
             per,
@@ -123,7 +125,43 @@ impl Mitch {
         format!("{} - {:?}", self.name, self.state)
     }
 
+    pub async fn start_lsl_stream(&self) -> color_eyre::Result<watch::Sender<bool>> {
+        let mut s = self.per.notifications().await?;
+        let (tx, mut rx) = watch::channel(true);
+        let stream_name = self.name.clone();
+        tokio::spawn(async move {
+            let info = MyInfo(
+                StreamInfo::new(
+                    &stream_name,
+                    "Motion",
+                    1,
+                    50.0,
+                    lsl::ChannelFormat::Double64,
+                    &stream_name,
+                )
+                .unwrap(),
+            );
+            let outlet = MyOutlet(StreamOutlet::new(&info.0, 1, 360).unwrap());
+            loop {
+                select! {
+                    _ = rx.changed() => {
+                        break;
+                    }
+                    Some(b) = s.next() => {
+                        if b.uuid != DATA_CHAR {
+                        }
+                        outlet.0.push_sample(&[b.value.as_slice()]).unwrap();
+                    }
+                }
+            }
+        });
+        return Ok(tx);
+    }
+
     pub(crate) async fn start_recording(&mut self) -> color_eyre::Result<()> {
+        if self.state.map(|s| s == MitchState::SysTx).unwrap_or(false) {
+            return Ok(());
+        }
         let c = self.per.characteristics();
         let data_char = c.iter().find(|c| c.uuid == DATA_CHAR).unwrap();
         self.per.subscribe(data_char).await?;
@@ -136,6 +174,7 @@ impl Mitch {
             )
             .await?;
         self.per.read(cmd_char).await?;
+        self.start_lsl_stream().await?;
         Ok(())
     }
 

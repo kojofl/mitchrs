@@ -11,6 +11,7 @@ crossterm = { version = "0.28.1", features = ["event-stream"] }
 futures = "0.3.31"
 ratatui = { version = "0.29.0", features = ["unstable-widget-ref"] }
 tokio = { version = "1.40.0", features = ["full"] }
+lsl = { git = "https://github.com/kojofl/liblsl-rust", version = "0.1.3" }
 color-eyre = "0.6.3"
 btleplug = "0.11.8"
 uuid = "1.17.0"

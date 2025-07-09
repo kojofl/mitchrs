@@ -155,6 +155,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc"
+version = "1.2.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c1599538de2394445747c8cf7935946e3cc27e9625f889d979bfb2aaf569362"
+dependencies = [
+ "shlex",
+]
+
+[[package]]
 name = "cesu8"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -165,6 +174,15 @@ name = "cfg-if"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
+
+[[package]]
+name = "cmake"
+version = "0.1.54"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7caa3f9de89ddbe2c607f4101924c5abec803763ae9534e4f4d7d8f84aa81f0"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "color-eyre"
@@ -661,6 +679,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "lsl"
+version = "0.1.3"
+source = "git+https://github.com/kojofl/liblsl-rust#0804c86ad986438f9049346108f8fe4616651199"
+dependencies = [
+ "lsl-sys",
+]
+
+[[package]]
+name = "lsl-sys"
+version = "0.1.1"
+source = "git+https://github.com/kojofl/liblsl-rust#0804c86ad986438f9049346108f8fe4616651199"
+dependencies = [
+ "cmake",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -695,6 +729,7 @@ dependencies = [
  "color-eyre",
  "crossterm",
  "futures",
+ "lsl",
  "ratatui",
  "tokio",
  "uuid",
@@ -947,6 +982,12 @@ checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
 ]
+
+[[package]]
+name = "shlex"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "signal-hook"
